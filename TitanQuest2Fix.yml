@@ -1,0 +1,10 @@
+name: Titan Quest II Fix
+
+# Enables or disables this mod.
+masterEnable: true
+
+# Enter desired resolution.
+# A value of 0 in either width or height will use your desktop's resolution.
+resolution:
+  width: 0
+  height: 0

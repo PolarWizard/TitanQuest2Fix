@@ -57,15 +57,20 @@ namespace Utils
     class ModuleInfo {
     public:
         HMODULE address;
-        std::string name;
+        std::string name = "";
         ModuleInfo(HMODULE address) : address(address) {}
     };
 
-    class SignatureHook {
-    public:
+    struct SignatureHook {
         std::string signature;
-        u64 offset;
-        SignatureHook(std::string signature, u64 offset = 0) : signature(signature), offset(offset) {}
+        u64 offset = 0;
+    };
+
+    struct SignaturePatch {
+        std::string signature;
+        u64 signatureOffset = 0;
+        std::string patch;
+        u64 patchOffset = 0;
     };
 
     /**
@@ -141,12 +146,12 @@ namespace Utils
     uintptr_t patternScan(void* module, std::string& signature);
 
     /**
-     * @brief Injects a mid-function hook based on a signature pattern match.
+     * @brief Injects a mid-function hook based on the provided signature to scan for.
      *
      * @tparam Func The type of the callback function.
      * @param enable If true, the hook will be injected; otherwise, it is skipped.
      * @param module The module to scan for the signature.
-     * @param hook The signature pattern and offset information for the hook.
+     * @param hook Struct containing the signature and hook information.
      * @param callback The function to execute when the hook is triggered.
      *
      * @details
@@ -162,7 +167,7 @@ namespace Utils
     void injectHook(bool enable, Utils::ModuleInfo& module, Utils::SignatureHook& hook, Func&& callback) {
         LOG("Fix {}", enable ? "Enabled" : "Disabled");
         if (enable) {
-            uintptr_t addr = Utils::patternScan(module.address, hook.signature);
+            u64 addr = Utils::patternScan(module.address, hook.signature);
             if (addr != 0) {
                 u64 hit = addr;
                 u64 absAddr = hit;
@@ -181,4 +186,24 @@ namespace Utils
             }
         }
     }
+
+    /**
+     * @brief Patches bytes based on the provided signature to scan for.
+     *
+     * @param enable If true, the patch will be applied; otherwise, it is skipped.
+     * @param module The module to scan for the signature.
+     * @param sp Struct containing the signature and patch information.
+     *
+     * @details
+     * This function scans the specified module for the given signature pattern.
+     * If a match is found, it calculates the absolute and relative addresses,
+     * logs the location, and applies a patch at the computed address based on the
+     * information provided in the `patch` struct.
+     *
+     * @note This function only patches the first match found in the module.
+     *
+     * @see Utils::patternScan
+     * @see Utils::patch
+     */
+    void injectPatch(bool enable, Utils::ModuleInfo& module, Utils::SignaturePatch& sp);
 }

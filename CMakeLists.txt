@@ -30,7 +30,7 @@ if(DEFINED CMAKE_INSTALL_PREFIX AND NOT CMAKE_INSTALL_PREFIX STREQUAL "")
     if(NOT EXISTS ${CMAKE_INSTALL_PREFIX})
         message(FATAL_ERROR "Install path '${CMAKE_INSTALL_PREFIX}' does not exist")
     else()
-        set(VALID_EXES "TQ2-Win64-Shipping.exe")
+        set(VALID_EXES "TQ2.exe")
         foreach(EXE ${VALID_EXES})
             if(EXISTS "${CMAKE_INSTALL_PREFIX}/${EXE}")
                 set(INSTALL_PATH_OK true)
@@ -44,6 +44,7 @@ if(DEFINED CMAKE_INSTALL_PREFIX AND NOT CMAKE_INSTALL_PREFIX STREQUAL "")
                 "The path does not contain any of the following valid game exe's: ${VALID_EXES}\n"
                 "Will use anyway during installation... but are you sure this is correct?"
             )
+            set(INSTALL_PATH_OK true)
         endif()
     endif()
 else()
@@ -76,7 +77,7 @@ set(DLL_FILES src/dllmain.cpp src/utils.cpp)
 add_library(${PROJECT_NAME} SHARED ${DLL_FILES})
 
 # Add /utf-8 flag for MSVC
-if (MSVC)
+if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE "/utf-8")
 endif()
 
@@ -91,11 +92,13 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     yaml-cpp
 )
 
-install(CODE "
-    execute_process(
-        COMMAND
-            powershell.exe
-                -ExecutionPolicy Bypass
-                -File \"${CMAKE_SOURCE_DIR}/install.ps1\" \"${CMAKE_INSTALL_PREFIX}\"
-    )
-")
+if(INSTALL_PATH_OK)
+    install(CODE "
+        execute_process(
+            COMMAND
+                powershell.exe
+                    -ExecutionPolicy Bypass
+                    -File \"${CMAKE_SOURCE_DIR}/install.ps1\" \"${CMAKE_INSTALL_PREFIX}\"
+        )
+    ")
+endif()

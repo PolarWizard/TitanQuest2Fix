@@ -19,7 +19,6 @@ cmake -DCMAKE_INSTALL_PREFIX=<FULL-PATH-TO-GAME-FOLDER> ..
 cmake --build .
 cmake --install .
 ```
-`cmake ..` will attempt to find the game folder in `C:/Program Files (x86)/Steam/steamapps/common/`. If the game folder cannot be found rerun the command providing the path to the game folder:<br>`cmake .. -DGAME_FOLDER="<FULL-PATH-TO-GAME-FOLDER>"`
 
 2. Download [dsound.dll](https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases) Win64 version
 3. Extract to game folder: `Titan Quest II/TQ2/Binaries/Win64`
@@ -31,13 +30,14 @@ cmake --install .
 - Adjust settings in `Titan Quest II/TQ2/Binaries/Win64/scripts/TitanQuest2Fix.yml`
 
 ## Screenshots
+| ![Demo1](images/TitanQuest2Fix_1.gif) |
+| --- |
+| <p align='center'> Fix disabled → Fix enabled </p> |
 
 ## License
 Distributed under the MIT License. See [LICENSE](LICENSE) for more information.
 
 ## External Tools
-
-### C/C++
 - [safetyhook](https://github.com/cursey/safetyhook)
 - [spdlog](https://github.com/gabime/spdlog)
 - [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader)

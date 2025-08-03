@@ -42,7 +42,7 @@
 #include "utils.hpp"
 
 // Macros
-#define VERSION "1.0.0"
+#define VERSION "1.1.0"
 
 // .yml to struct
 typedef struct resolution_t {
@@ -51,10 +51,29 @@ typedef struct resolution_t {
     f32 aspectRatio;
 } resolution_t;
 
+typedef struct pillarbox_t {
+    bool enable;
+} pillarbox_t;
+
+typedef struct fix_t {
+    pillarbox_t pillarbox;
+} fix_t;
+
+typedef struct fov_t {
+    bool enable;
+    f32 value;
+} fov_t;
+
+typedef struct feature_t {
+    fov_t fov;
+} feature_t;
+
 typedef struct yml_t {
     std::string name;
     bool masterEnable;
     resolution_t resolution;
+    fix_t fixes;
+    feature_t features;
 } yml_t;
 
 // Globals
@@ -108,6 +127,11 @@ void readYml() {
     yml.resolution.width = config["resolution"]["width"].as<u32>();
     yml.resolution.height = config["resolution"]["height"].as<u32>();
 
+    yml.fixes.pillarbox.enable = config["fixes"]["pillarbox"]["enable"].as<bool>();
+
+    yml.features.fov.enable = config["features"]["fov"]["enable"].as<bool>();
+    yml.features.fov.value = config["features"]["fov"]["value"].as<f32>();
+
     if (yml.resolution.width == 0 || yml.resolution.height == 0) {
         std::pair<int, int> dimensions = Utils::getDesktopDimensions();
         yml.resolution.width  = dimensions.first;
@@ -127,6 +151,9 @@ void readYml() {
     LOG("Normalized Width: {}", nativeWidth);
     LOG("Normalized Offset: {}", nativeOffset);
     LOG("Width Scaling Factor: {}", widthScalingFactor);
+    LOG("Fixes.Pillarbox.Enable: {}", yml.fixes.pillarbox.enable);
+    LOG("Features.FOV.Enable: {}", yml.features.fov.enable);
+    LOG("Features.FOV.Value: {}", yml.features.fov.value);
 }
 
 /**
@@ -256,8 +283,61 @@ void pillarBoxFix() {
         .patchOffset = 6
     };
 
-    bool enable = yml.masterEnable;
+    bool enable = yml.masterEnable && yml.fixes.pillarbox.enable;
     Utils::injectPatch(enable, module, sp);
+}
+
+/**
+ * @brief Modifies the ingame FOV.
+ *
+ * @details
+ * The game default FOV is 75 degrees. This feature if enabled allows you to change that value based on what
+ * is provided in the YAML file and if this feature is enabled. There is no error or sanity checking, therefore
+ * if a user provides a bad value in the YAML file, whether that be negative or a value that is too high or low
+ * the camera will break.
+ *
+ * How was this found?
+ * As part of the pillarbox fix the FOV exposed itself there given the HOR+ scaling that happens when ultrawide
+ * ratios are detected. It was easy to see in the registers during a breakpoint that 75 was being used during the
+ * trigonemetric tan calculations when loaded into xmm0 when the pillarbox fix was enabled, from the following
+ * instruction:
+ * TQ2-Win64-Shipping.exe+2393BCF - F3 0F10 44 24 60      - movss xmm0,[rsp+60]
+ *
+ * Or if the pillabox fix is not enabled then you would load 75.0f into xmm1 as follows:
+ * TQ2-Win64-Shipping.exe+2393C47 - F3 0F10 4C 24 60      - movss xmm1,[rsp+60]
+ *
+ * Frankly I don't like the injection I would need to do here, either at the start of the functionI would need
+ * to modify the value at rsp+60 or I would need to two hooks to modify xmm0 and xmm1 just after they are loaded.
+ *
+ * I needed something more simple, so I scanned for where the write to the memory location pointed to by rsp+60 was
+ * happening and found out that it happens just before this function is called:
+ * 1 - TQ2-Win64-Shipping.exe+22C8BAA - F3 0F11 44 24 20  - movss [rsp+20],xmm0
+ * 2 - TQ2-Win64-Shipping.exe+22C8BB0 - E8 DBAF0C00       - call TQ2-Win64-Shipping.exe+2393B90
+ *
+ * This is much better place to inject right before xmm0, which holds the FOV value we need to change, gets written
+ * to rsp+20 which is the same memory location as that pointed to by rsp+60 inside the function that is called on
+ * line 2.
+ *
+ * So a hook is injected at line 1 and that replaces the value held by xmm0 with the value provided in the YAML
+ * file.
+ *
+ * @note When increasing the FOV only the camera is affected, this feature has no effect on view frustum culling,
+ * so now that the user can see more of the game world, they can also inadvertently see a lot more pop in and out
+ * of various game assets towards the edges of the screen.
+ *
+ * @return void
+ */
+void fovFeature() {
+    Utils::SignatureHook hook = {
+        .signature = "F3 0F 11 44 24 20    E8 ?? ?? ?? ??    48 8B 5C 24 50    48 83 C4 40    5F    C3    48 89 5C 24 08",
+    };
+
+    bool enable = yml.masterEnable && yml.features.fov.enable;
+    Utils::injectHook(enable, module, hook,
+        [](SafetyHookContext& ctx) {
+            ctx.xmm0.f32[0] = yml.features.fov.value;
+        }
+    );
 }
 
 /**
@@ -273,6 +353,7 @@ DWORD WINAPI Main(void* lpParameter) {
     logInit();
     readYml();
     pillarBoxFix();
+    fovFeature();
     return true;
 }
 

@@ -8,3 +8,20 @@ masterEnable: true
 resolution:
   width: 0
   height: 0
+
+#Available fixes
+fixes:
+
+  # If enabled pillarbox will be removed.
+  pillarbox:
+    enable: true
+
+# Available features
+features:
+
+  # If enabled in game FOV will be changed to the value provided.
+  # NOTE: Going too high or low will break the camera!
+  # NOTE: Game default FOV is 75.
+  fov:
+    enable: false
+    value: 75

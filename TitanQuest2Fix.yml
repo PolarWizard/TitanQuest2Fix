@@ -25,3 +25,8 @@ features:
   fov:
     enable: false
     value: 75
+
+  # If enabled HUD will be slightly increased in size by 12.5%.
+  # NOTE: This increase is just enough to make the HUD bigger, but not enough to make elements go off screen.
+  hud:
+    enable: false

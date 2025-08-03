@@ -64,8 +64,13 @@ typedef struct fov_t {
     f32 value;
 } fov_t;
 
+typedef struct hud_t {
+    bool enable;
+} hud_t;
+
 typedef struct feature_t {
     fov_t fov;
+    hud_t hud;
 } feature_t;
 
 typedef struct yml_t {
@@ -77,15 +82,17 @@ typedef struct yml_t {
 } yml_t;
 
 // Globals
-Utils::ModuleInfo module(GetModuleHandle(nullptr));
+namespace {
+    Utils::ModuleInfo module(GetModuleHandle(nullptr));
 
-u32 nativeWidth = 0;
-u32 nativeOffset = 0;
-f32 nativeAspectRatio = (16.0f / 9.0f);
-f32 widthScalingFactor = 0;
+    u32 nativeWidth = 0;
+    u32 nativeOffset = 0;
+    f32 nativeAspectRatio = (16.0f / 9.0f);
+    f32 widthScalingFactor = 0;
 
-YAML::Node config = YAML::LoadFile("TitanQuest2Fix.yml");
-yml_t yml;
+    YAML::Node config = YAML::LoadFile("TitanQuest2Fix.yml");
+    yml_t yml;
+}
 
 /**
  * @brief Initializes logging for the application.
@@ -132,6 +139,8 @@ void readYml() {
     yml.features.fov.enable = config["features"]["fov"]["enable"].as<bool>();
     yml.features.fov.value = config["features"]["fov"]["value"].as<f32>();
 
+    yml.features.hud.enable = config["features"]["hud"]["enable"].as<bool>();
+
     if (yml.resolution.width == 0 || yml.resolution.height == 0) {
         std::pair<int, int> dimensions = Utils::getDesktopDimensions();
         yml.resolution.width  = dimensions.first;
@@ -154,6 +163,7 @@ void readYml() {
     LOG("Fixes.Pillarbox.Enable: {}", yml.fixes.pillarbox.enable);
     LOG("Features.FOV.Enable: {}", yml.features.fov.enable);
     LOG("Features.FOV.Value: {}", yml.features.fov.value);
+    LOG("Features.HUD.Enable: {}", yml.features.hud.enable);
 }
 
 /**
@@ -341,6 +351,89 @@ void fovFeature() {
 }
 
 /**
+ * @brief Increases HUD size by 12.5%.
+ *
+ * @details
+ * The increase is just enough to make the HUD bigger, but not enough to make elements go off screen.
+ *
+ * How was this found?
+ * HUD is almost always the hardest part to modify.
+ *
+ * When it comes to HUD modifications the first thing I like to do is scan for 1.0f and start modifying any hits
+ * to something like 0.5f. I do this because almost always if not everytime the HUD calculation in some part or
+ * another will use 1.0f, as this is a common value for scaling and normalization.
+ *
+ * So I did that and eventually I found something that did let me change the HUD size and that 1.0f instance led
+ * me to this small function:
+ * 1  - TQ2-Win64-Shipping.exe+53BFC20 - 48 89 5C 24 18        - mov [rsp+18],rbx
+ * 2  - TQ2-Win64-Shipping.exe+53BFC25 - 57                    - push rdi
+ * 3  - TQ2-Win64-Shipping.exe+53BFC26 - 48 83 EC 20           - sub rsp,20
+ * 4  - TQ2-Win64-Shipping.exe+53BFC2A - 80 B9 A8020000 00     - cmp byte ptr [rcx+000002A8],00
+ * 5  - TQ2-Win64-Shipping.exe+53BFC31 - 48 8B DA              - mov rbx,rdx
+ * 6  - TQ2-Win64-Shipping.exe+53BFC34 - 48 8B F9              - mov rdi,rcx
+ * 7  - TQ2-Win64-Shipping.exe+53BFC37 - 74 21                 - je TQ2-Win64-Shipping.exe+53BFC5A
+ * 8  - TQ2-Win64-Shipping.exe+53BFC39 - 3B 99 A0020000        - cmp ebx,[rcx+000002A0]
+ * 9  - TQ2-Win64-Shipping.exe+53BFC3F - 75 19                 - jne TQ2-Win64-Shipping.exe+53BFC5A
+ * 10 - TQ2-Win64-Shipping.exe+53BFC41 - 48 8B C2              - mov rax,rdx
+ * 11 - TQ2-Win64-Shipping.exe+53BFC44 - 48 C1 E8 20           - shr rax,20
+ * 12 - TQ2-Win64-Shipping.exe+53BFC48 - 3B 81 A4020000        - cmp eax,[rcx+000002A4]
+ * 13 - TQ2-Win64-Shipping.exe+53BFC4E - 75 0A                 - jne TQ2-Win64-Shipping.exe+53BFC5A
+ * 14 - TQ2-Win64-Shipping.exe+53BFC50 - F3 0F10 81 AC020000   - movss xmm0,[rcx+000002AC]
+ * 15 - TQ2-Win64-Shipping.exe+53BFC58 - EB 31                 - jmp TQ2-Win64-Shipping.exe+53BFC8B
+ * 16 - TQ2-Win64-Shipping.exe+53BFC5A - 4C 8D 44 24 30        - lea r8,[rsp+30]
+ * 17 - TQ2-Win64-Shipping.exe+53BFC5F - E8 3CD6FEFF           - call TQ2-Win64-Shipping.exe+53AD2A0
+ * 18 - TQ2-Win64-Shipping.exe+53BFC64 - 80 7C 24 30 00        - cmp byte ptr [rsp+30],00
+ * 19 - TQ2-Win64-Shipping.exe+53BFC69 - 75 20                 - jne TQ2-Win64-Shipping.exe+53BFC8B
+ * 20 - TQ2-Win64-Shipping.exe+53BFC6B - 48 8D 87 A0020000     - lea rax,[rdi+000002A0]
+ * 21 - TQ2-Win64-Shipping.exe+53BFC72 - F3 0F11 87 AC020000   - movss [rdi+000002AC],xmm0
+ * 22 - TQ2-Win64-Shipping.exe+53BFC7A - 48 8D 4C 24 38        - lea rcx,[rsp+38]
+ * 23 - TQ2-Win64-Shipping.exe+53BFC7F - 48 3B C8              - cmp rcx,rax
+ * 24 - TQ2-Win64-Shipping.exe+53BFC82 - 74 07                 - je TQ2-Win64-Shipping.exe+53BFC8B
+ * 25 - TQ2-Win64-Shipping.exe+53BFC84 - 48 89 18              - mov [rax],rbx
+ * 26 - TQ2-Win64-Shipping.exe+53BFC87 - C6 40 08 01           - mov byte ptr [rax+08],01
+ * 27 - TQ2-Win64-Shipping.exe+53BFC8B - F3 0F59 87 C0010000   - mulss xmm0,[rdi+000001C0]
+ * 28 - TQ2-Win64-Shipping.exe+53BFC93 - 48 8B 5C 24 40        - mov rbx,[rsp+40]
+ * 29 - TQ2-Win64-Shipping.exe+53BFC98 - F3 0F5F 05 9C7DCD00   - maxss xmm0,[TQ2-Win64-Shipping.D3D12SDKVersion+4E18]
+ * 30 - TQ2-Win64-Shipping.exe+53BFCA0 - 48 83 C4 20           - add rsp,20
+ * 31 - TQ2-Win64-Shipping.exe+53BFCA4 - 5F                    - pop rdi
+ * 32 - TQ2-Win64-Shipping.exe+53BFCA5 - C3                    - ret
+ *
+ * I will ignore most of the code to focus on the bits that make this feature work. Line 14 is the important line
+ * where the magic 1.0f is read that is the global scaler for the HUD. In terms of percetages think of 1.0f as
+ * 100% so HUD is the default size as the developers intended it to be. That register will always contain that
+ * value in this block and will be returned when the function returns. Aother point of interest is line 27, where
+ * the 1.0f is multiplied by another scaler, that location also has 1.0f, so nothing is scaled, and on line 29 the
+ * game performs a quick check against 0.01f (value at TQ2-Win64-Shipping.D3D12SDKVersion+4E18). And the game takes
+ * the greater value of the two. Its a strange check to make, since if the value is so small that it makes the HUD
+ * invisible, and just making NOP'ing this instruction and forcing a 0 into xmm0 has no bad consequences, so its
+ * wierd why this check is here.
+ *
+ * But anyway back to the main point, after that multiply operation, we can inject a new value into the xmm0
+ * register, and with experimentation I found that injecting 1.125f (112.5% if you wanna think in percentages). So
+ * that will make the HUD 12.5% bigger, I hoped I could push it further, but that value is just enough where certain
+ * UI elements don't go offscreen. This scales everything HUD wise, and in reverse if you go smaller than everything
+ * becomes smaller, that option is there too.
+ *
+ * And just for fun, when you return from this function, the game also applies a division operation to the value in
+ * xmm0. Xmm0 is divided once again by 1.0f, so nothing changes. Yet another scaler operation is applied that doesn't
+ * do anything.
+ *
+ * @return void
+ */
+void hudFeature() {
+    Utils::SignatureHook hook = {
+        .signature = "48 8B 5C 24 40    F3 0F 5F 05 ?? ?? ?? ??",
+    };
+
+    bool enable = yml.masterEnable && yml.features.hud.enable;
+    Utils::injectHook(enable, module, hook,
+        [](SafetyHookContext& ctx) {
+            ctx.xmm0.f32[0] = 1.125f;
+        }
+    );
+}
+
+/**
  * @brief This function serves as the entry point for the DLL. It performs the following tasks:
  * 1. Initializes the logging system.
  * 2. Reads the configuration from a YAML file.
@@ -354,6 +447,7 @@ DWORD WINAPI Main(void* lpParameter) {
     readYml();
     pillarBoxFix();
     fovFeature();
+    hudFeature();
     return true;
 }
 

@@ -19,12 +19,11 @@ cmake -DCMAKE_INSTALL_PREFIX=<FULL-PATH-TO-GAME-FOLDER> ..
 cmake --build .
 cmake --install .
 ```
-
 2. Download [dsound.dll](https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases) Win64 version
 3. Extract to game folder: `Titan Quest II/TQ2/Binaries/Win64`
 
 ### Using Release
-1. Download and follow instructions in [latest release](https://github.com/PolarWizard/TitanQuest2Fix/releases)
+Download and follow instructions in [latest release](https://github.com/PolarWizard/TitanQuest2Fix/releases)
 
 ## Configuration
 - Adjust settings in `Titan Quest II/TQ2/Binaries/Win64/scripts/TitanQuest2Fix.yml`

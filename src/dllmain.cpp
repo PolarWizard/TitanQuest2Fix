@@ -42,7 +42,7 @@
 #include "utils.hpp"
 
 // Macros
-#define VERSION "1.1.0"
+#define VERSION "1.2.1"
 
 // .yml to struct
 typedef struct resolution_t {
@@ -418,6 +418,12 @@ void fovFeature() {
  * xmm0. Xmm0 is divided once again by 1.0f, so nothing changes. Yet another scaler operation is applied that doesn't
  * do anything.
  *
+ * @note As of v1.2.1 it has been discovered that the HUD scaler is not a constant 1.0f value, but rather it's a ratio
+ * between the current game selected resolution and the physical desktop resolution. For example if the desktop is
+ * 3840x2160 and the ingame resolution is 1920x1080, the HUD scaler will be 0.5f (1080/2160). In v1.2.1 we take that
+ * into consideration and instead multiply what is already in the xmm0 regiter by 12.5% rather than hardcode 1.125f
+ * like it was done previously.
+ *
  * @return void
  */
 void hudFeature() {
@@ -428,7 +434,7 @@ void hudFeature() {
     bool enable = yml.masterEnable && yml.features.hud.enable;
     Utils::injectHook(enable, module, hook,
         [](SafetyHookContext& ctx) {
-            ctx.xmm0.f32[0] = 1.125f;
+            ctx.xmm0.f32[0] += (ctx.xmm0.f32[0] * 0.125f);
         }
     );
 }

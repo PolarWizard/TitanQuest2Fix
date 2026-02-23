@@ -291,44 +291,28 @@ void readYml() {
  * viewport that was written on line 3 does not take effect. But if the enable bit is set on line 7 then the viewport is
  * used and that fancy hex value is the aspect ratio float for 16:9 (1.78).
  *
- * EDIT: Needed to change the location of the fix, as the previous location did not only break with the latest update
- * to the game, but also seems that the game never calls that function anymore either.
+ * EDIT: One of the game's updates broke this fix completely. The patch itself still works, but this time around I added
+ * some additional wildcards to the signature to make it more resilient to future updates.
  *
- * The patch has also been changed to a hook and it is applied here:
- * 1 - TQ2-Win64-Shipping.exe+392FD29 - F3 0F10 83 50020000   - movss xmm0,[rbx+00000250]
- * 2 - TQ2-Win64-Shipping.exe+392FD31 - F3 0F11 47 30         - movss [rdi+30],xmm0
- * 3 - TQ2-Win64-Shipping.exe+392FD36 - 8B 83 74020000        - mov eax,[rbx+00000274]
- * 4 - TQ2-Win64-Shipping.exe+392FD3C - 89 47 5C              - mov [rdi+5C],eax
- * 5 - TQ2-Win64-Shipping.exe+392FD3F - 0FB6 8B 79020000      - movzx ecx,byte ptr [rbx+00000279]
- * 6 - TQ2-Win64-Shipping.exe+392FD46 - 33 4F 68              - xor ecx,[rdi+68]
+ * This isnt the whole story though as this fix now only applies to being in game, the main menu and certain menus accessed
+ * from the main menu are still pillarboxed. For now this will suffice.
  *
- * The hook is placed on line 4, where we need to make sure that the new value injected into eax is exactly the monitors
- * aspect ratio, any smaller means that pillarbox will still be applied and anything larger means that letterbox will be
- * applied.
- *
- * As for finding this new place, as always relatively straightforward, set the game initially to some 16:9 resolution and
- * scan for 1.7777777778 in the code, then change the game to some 32:9 resolution and pay attention to any values which
- * did not become 3.555555556 which in this case was plenty. From there just slowly inspect what code reads and writes that
- * value and eventually you will find the specific value in memory which determines if pillarbox or letterbox should be
- * applied. In this case the memory value at rbx+274 was read only here, but had 2 additional writes constantly carried out
- * elsewhere in the code, disable the code that does the writes or just change the instruction that does the read and viola
- * we see visible change on the screen.
+ * But as a added benefit users in forums have said that the worldmap is completely broken in 32:9, user marker is misaligned,
+ * fog of war is misaligned, and wierdly enough this pillarbox fix with the basic patch, completely fixes it.
  *
  * @return void
  */
 void fixPillarBox() {
-    Utils::SignatureHook hook = {
+    Utils::SignaturePatch sp = {
         .tag = __func__,
-        .signature = "89 47 ??    0F B6 8B ?? ?? ?? ??    33 4F ??",
+        .signature = "80 3D ?? ?? ?? ?? 00    74 ??    F3 0F 10 44 24 ??",
+        .patch = " 01",
+        .patchOffset = 6,
     };
 
     bool enable = yml.masterEnable && yml.fixes.pillarbox.enable;
     LOG("{}", enable ? "Enabled" : "Disabled");
-    Utils::injectHook(enable, module, hook,
-        [](SafetyHookContext& ctx) {
-            ctx.rax = std::bit_cast<u32>(yml.resolution.aspectRatio);
-        }
-    );
+    Utils::injectPatch(enable, module, sp);
 }
 
 /**

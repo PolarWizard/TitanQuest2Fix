@@ -13,6 +13,8 @@ resolution:
 fixes:
 
   # If enabled pillarbox will be removed.
+  # NOTE: On boot up game will be stretched if your setting was not 'Windowed Fullscreen', to
+  #       unstretch change to 'Windowed Fullscreen' and then back to your desired setting.
   pillarbox:
     enable: true
 

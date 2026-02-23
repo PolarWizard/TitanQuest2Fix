@@ -43,7 +43,7 @@ $fullPath = "$gameFolder\$gameSubFolder\$scriptsFolder"
 $fixName = "TitanQuest2Fix"
 
 if (Test-Path -Path $gameFolder) {
-    $dllPath = Get-ChildItem -Path "$PSScriptRoot\bin\*.dll" -Recurse
+    $dllPath = Get-ChildItem -Path "$PSScriptRoot\build\Release\*.dll" -Recurse
     Write-Output "Found DLL at $dllPath"
     New-Item -Path "$fullPath" -ItemType Directory -Force | Out-Null
     Write-Output "Copying DLL to $fullPath"

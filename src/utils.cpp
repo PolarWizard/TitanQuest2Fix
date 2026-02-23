@@ -98,7 +98,7 @@ namespace Utils
         VirtualProtect((LPVOID)address, patternBytes.size(), oldProtect, &oldProtect);
     }
 
-    u64 patternScan(void* module, std::string& signature)
+    uintptr_t patternScan(void* module, std::string& signature)
     {
         static auto pattern_to_byte = [](const char* pattern) {
             struct Pattern {
@@ -137,17 +137,17 @@ namespace Utils
         auto data = pattern.bytes.data();
         auto check = pattern.check.data();
 
-        for (auto i = 0ul; i < (sizeOfImage - size); i++) {
+        for (auto i = 0ul; i < sizeOfImage - size; ++i) {
             bool found = true;
-            for (auto j = 0ul; j < size; j++) {
-                u8 byte = data[j];
-                if ((check[j] == 1) && (scanBytes[i + j] != byte)) {
+            for (auto j = 0ul; j < pattern.bytes.size(); ++j) {
+                u8 byte = pattern.bytes.data()[j];
+                if (check[j] == 1 && scanBytes[i + j] != pattern.bytes.data()[j]) {
                     found = false;
                     break;
                 }
             }
             if (found) {
-                return reinterpret_cast<u64>(&scanBytes[i]);
+                return reinterpret_cast<uintptr_t>(&scanBytes[i]);
             }
         }
         return 0;
@@ -155,21 +155,20 @@ namespace Utils
 
     void injectPatch(bool enable, Utils::ModuleInfo& module, Utils::SignaturePatch& sp)
     {
-        LOG("Fix {}", enable ? "Enabled" : "Disabled");
         if (enable) {
             u64 addr = Utils::patternScan(module.address, sp.signature);
             if (addr != 0) {
                 u64 hit = addr;
                 u64 absAddr = hit;
                 u64 relAddr = hit - reinterpret_cast<u64>(module.address);
-                LOG("Found '{}' @ {:s}+{:x}", sp.signature, module.name, relAddr);
+                spdlog::info("{} : Found '{}' @ {:s}+{:x}", sp.tag, sp.signature, module.name, relAddr);
                 u64 patchAbsAddr = absAddr + sp.patchOffset;
                 u64 patchRelAddr = relAddr + sp.patchOffset;
                 Utils::patch(patchAbsAddr, sp.patch);
-                LOG("Patched '{}' @ {:s}+{:x}", sp.patch, module.name, patchRelAddr);
+                spdlog::info("{} : Patched '{}' @ {:s}+{:x}", sp.tag, sp.patch, module.name, patchRelAddr);
             }
             else {
-                LOG("Did not find '{}'", sp.signature);
+                spdlog::info("{} : Did not find '{}'", sp.tag, sp.signature);
             }
         }
     }

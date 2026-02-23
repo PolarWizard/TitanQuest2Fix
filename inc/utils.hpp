@@ -54,23 +54,24 @@ namespace
 
 namespace Utils
 {
-    class ModuleInfo {
-    public:
-        HMODULE address;
-        std::string name = "";
-        ModuleInfo(HMODULE address) : address(address) {}
+    struct ModuleInfo {
+        HMODULE address{};
+        std::string name{};
+        explicit ModuleInfo(HMODULE address) : address(address) {}
     };
 
     struct SignatureHook {
-        std::string signature;
-        u64 offset = 0;
+        std::string tag{};
+        std::string signature{};
+        u64 offset{};
     };
 
     struct SignaturePatch {
-        std::string signature;
-        u64 signatureOffset = 0;
-        std::string patch;
-        u64 patchOffset = 0;
+        std::string tag{};
+        std::string signature{};
+        u64 signatureOffset{};
+        std::string patch{};
+        u64 patchOffset{};
     };
 
     /**
@@ -146,12 +147,12 @@ namespace Utils
     uintptr_t patternScan(void* module, std::string& signature);
 
     /**
-     * @brief Injects a mid-function hook based on the provided signature to scan for.
+     * @brief Injects a mid-function hook based on a signature pattern match.
      *
      * @tparam Func The type of the callback function.
      * @param enable If true, the hook will be injected; otherwise, it is skipped.
      * @param module The module to scan for the signature.
-     * @param hook Struct containing the signature and hook information.
+     * @param sh The signature pattern and offset information for the hook.
      * @param callback The function to execute when the hook is triggered.
      *
      * @details
@@ -164,25 +165,25 @@ namespace Utils
      * @see Utils::patternScan
      */
     template <typename Func>
-    void injectHook(bool enable, Utils::ModuleInfo& module, Utils::SignatureHook& hook, Func&& callback) {
-        LOG("Fix {}", enable ? "Enabled" : "Disabled");
+    void injectHook(bool enable, Utils::ModuleInfo& module, Utils::SignatureHook& sh, Func&& callback) {
         if (enable) {
-            u64 addr = Utils::patternScan(module.address, hook.signature);
+            uintptr_t addr = Utils::patternScan(module.address, sh.signature);
             if (addr != 0) {
                 u64 hit = addr;
                 u64 absAddr = hit;
                 u64 relAddr = hit - reinterpret_cast<u64>(module.address);
-                LOG("Found '{}' @ {:s}+{:x}", hook.signature, module.name, relAddr);
-                u64 hookAbsAddr = absAddr + hook.offset;
-                u64 hookRelAddr = relAddr + hook.offset;
-                static SafetyHookMid aspectRatioHook = safetyhook::create_mid(
+                spdlog::info("{} : Found '{}' @ {:s}+{:x}", sh.tag, sh.signature, module.name, relAddr);
+                u64 hookAbsAddr = absAddr + sh.offset;
+                u64 hookRelAddr = relAddr + sh.offset;
+                static std::vector<SafetyHookMid> hooks;
+                hooks.push_back(safetyhook::create_mid(
                     reinterpret_cast<void*>(hookAbsAddr),
                     callback
-                );
-                LOG("Hooked @ {:s}+{:x}", module.name, hookRelAddr);
+                ));
+                spdlog::info("{} : Hooked @ {:s}+{:x}", sh.tag, module.name, hookRelAddr);
             }
             else {
-                LOG("Did not find '{}'", hook.signature);
+                spdlog::info("{} : Did not find '{}'", sh.tag, sh.signature);
             }
         }
     }

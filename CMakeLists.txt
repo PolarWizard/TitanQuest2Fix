@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-cmake_minimum_required(VERSION 3.28)
+cmake_minimum_required(VERSION 4.2)
 
 # Variables
 set(PROJECT_NAME TitanQuest2Fix)
@@ -62,19 +62,13 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreaded)
 project(${PROJECT_NAME} VERSION 1.0)
 set(CMAKE_SHARED_LIBRARY_PREFIX "")
 
-# Define the common output directory
-set(OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
-
-# Configure debug and release directories separately
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${OUTPUT_DIRECTORY}/Debug)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${OUTPUT_DIRECTORY}/Release)
+add_library(${PROJECT_NAME} SHARED)
 
 # Include dependencies via FetchContent
 include(cmake/Dependencies.cmake)
 
 # Add DLL
-set(DLL_FILES src/dllmain.cpp src/utils.cpp)
-add_library(${PROJECT_NAME} SHARED ${DLL_FILES})
+target_sources(${PROJECT_NAME} PRIVATE src/dllmain.cpp src/utils.cpp)
 
 # Add /utf-8 flag for MSVC
 if(MSVC)

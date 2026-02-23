@@ -64,13 +64,8 @@ typedef struct fov_t {
     f32 value;
 } fov_t;
 
-typedef struct hud_t {
-    bool enable;
-} hud_t;
-
 typedef struct feature_t {
     fov_t fov;
-    hud_t hud;
 } feature_t;
 
 typedef struct yml_t {
@@ -95,11 +90,11 @@ namespace {
 }
 
 /**
- * @brief Initializes logging for the application.
+ * @brief Opens and initializes logging system.
  *
  * @return void
  */
-void logInit() {
+void logOpen() {
     // spdlog initialisation
     auto logger = spdlog::basic_logger_mt("TitanQuest2Fix", "TitanQuest2Fix.log");
     spdlog::set_default_logger(logger);
@@ -122,6 +117,21 @@ void logInit() {
 }
 
 /**
+ * @brief Closes and cleans up the logging system.
+ *
+ * @details
+ * Flushes all pending log messages, drops all loggers, and shuts down the spdlog system.
+ * This function should be called when the DLL is being unloaded to ensure all log data
+ * is properly written to disk.
+ *
+ * @return void
+ */
+void logClose() {
+    spdlog::drop_all();
+    spdlog::shutdown();
+}
+
+/**
  * @brief Reads and parses configuration settings from a YAML file.
  *
  * @return void
@@ -138,8 +148,6 @@ void readYml() {
 
     yml.features.fov.enable = config["features"]["fov"]["enable"].as<bool>();
     yml.features.fov.value = config["features"]["fov"]["value"].as<f32>();
-
-    yml.features.hud.enable = config["features"]["hud"]["enable"].as<bool>();
 
     if (yml.resolution.width == 0 || yml.resolution.height == 0) {
         std::pair<int, int> dimensions = Utils::getDesktopDimensions();
@@ -163,7 +171,6 @@ void readYml() {
     LOG("Fixes.Pillarbox.Enable: {}", yml.fixes.pillarbox.enable);
     LOG("Features.FOV.Enable: {}", yml.features.fov.enable);
     LOG("Features.FOV.Value: {}", yml.features.fov.value);
-    LOG("Features.HUD.Enable: {}", yml.features.hud.enable);
 }
 
 /**
@@ -284,17 +291,44 @@ void readYml() {
  * viewport that was written on line 3 does not take effect. But if the enable bit is set on line 7 then the viewport is
  * used and that fancy hex value is the aspect ratio float for 16:9 (1.78).
  *
+ * EDIT: Needed to change the location of the fix, as the previous location did not only break with the latest update
+ * to the game, but also seems that the game never calls that function anymore either.
+ *
+ * The patch has also been changed to a hook and it is applied here:
+ * 1 - TQ2-Win64-Shipping.exe+392FD29 - F3 0F10 83 50020000   - movss xmm0,[rbx+00000250]
+ * 2 - TQ2-Win64-Shipping.exe+392FD31 - F3 0F11 47 30         - movss [rdi+30],xmm0
+ * 3 - TQ2-Win64-Shipping.exe+392FD36 - 8B 83 74020000        - mov eax,[rbx+00000274]
+ * 4 - TQ2-Win64-Shipping.exe+392FD3C - 89 47 5C              - mov [rdi+5C],eax
+ * 5 - TQ2-Win64-Shipping.exe+392FD3F - 0FB6 8B 79020000      - movzx ecx,byte ptr [rbx+00000279]
+ * 6 - TQ2-Win64-Shipping.exe+392FD46 - 33 4F 68              - xor ecx,[rdi+68]
+ *
+ * The hook is placed on line 4, where we need to make sure that the new value injected into eax is exactly the monitors
+ * aspect ratio, any smaller means that pillarbox will still be applied and anything larger means that letterbox will be
+ * applied.
+ *
+ * As for finding this new place, as always relatively straightforward, set the game initially to some 16:9 resolution and
+ * scan for 1.7777777778 in the code, then change the game to some 32:9 resolution and pay attention to any values which
+ * did not become 3.555555556 which in this case was plenty. From there just slowly inspect what code reads and writes that
+ * value and eventually you will find the specific value in memory which determines if pillarbox or letterbox should be
+ * applied. In this case the memory value at rbx+274 was read only here, but had 2 additional writes constantly carried out
+ * elsewhere in the code, disable the code that does the writes or just change the instruction that does the read and viola
+ * we see visible change on the screen.
+ *
  * @return void
  */
-void pillarBoxFix() {
-    Utils::SignaturePatch sp = {
-        .signature = "80 3D ?? ?? ?? ?? 00    74 78    F3 0F 10 44 24 60",
-        .patch = "01",
-        .patchOffset = 6
+void fixPillarBox() {
+    Utils::SignatureHook hook = {
+        .tag = __func__,
+        .signature = "89 47 ??    0F B6 8B ?? ?? ?? ??    33 4F ??",
     };
 
     bool enable = yml.masterEnable && yml.fixes.pillarbox.enable;
-    Utils::injectPatch(enable, module, sp);
+    LOG("{}", enable ? "Enabled" : "Disabled");
+    Utils::injectHook(enable, module, hook,
+        [](SafetyHookContext& ctx) {
+            ctx.rax = std::bit_cast<u32>(yml.resolution.aspectRatio);
+        }
+    );
 }
 
 /**
@@ -337,104 +371,17 @@ void pillarBoxFix() {
  *
  * @return void
  */
-void fovFeature() {
+void featureFov() {
     Utils::SignatureHook hook = {
+        .tag = __func__,
         .signature = "F3 0F 11 44 24 20    E8 ?? ?? ?? ??    48 8B 5C 24 50    48 83 C4 40    5F    C3    48 89 5C 24 08",
     };
 
     bool enable = yml.masterEnable && yml.features.fov.enable;
+    LOG("{}", enable ? "Enabled" : "Disabled");
     Utils::injectHook(enable, module, hook,
         [](SafetyHookContext& ctx) {
             ctx.xmm0.f32[0] = yml.features.fov.value;
-        }
-    );
-}
-
-/**
- * @brief Increases HUD size by 12.5%.
- *
- * @details
- * The increase is just enough to make the HUD bigger, but not enough to make elements go off screen.
- *
- * How was this found?
- * HUD is almost always the hardest part to modify.
- *
- * When it comes to HUD modifications the first thing I like to do is scan for 1.0f and start modifying any hits
- * to something like 0.5f. I do this because almost always if not everytime the HUD calculation in some part or
- * another will use 1.0f, as this is a common value for scaling and normalization.
- *
- * So I did that and eventually I found something that did let me change the HUD size and that 1.0f instance led
- * me to this small function:
- * 1  - TQ2-Win64-Shipping.exe+53BFC20 - 48 89 5C 24 18        - mov [rsp+18],rbx
- * 2  - TQ2-Win64-Shipping.exe+53BFC25 - 57                    - push rdi
- * 3  - TQ2-Win64-Shipping.exe+53BFC26 - 48 83 EC 20           - sub rsp,20
- * 4  - TQ2-Win64-Shipping.exe+53BFC2A - 80 B9 A8020000 00     - cmp byte ptr [rcx+000002A8],00
- * 5  - TQ2-Win64-Shipping.exe+53BFC31 - 48 8B DA              - mov rbx,rdx
- * 6  - TQ2-Win64-Shipping.exe+53BFC34 - 48 8B F9              - mov rdi,rcx
- * 7  - TQ2-Win64-Shipping.exe+53BFC37 - 74 21                 - je TQ2-Win64-Shipping.exe+53BFC5A
- * 8  - TQ2-Win64-Shipping.exe+53BFC39 - 3B 99 A0020000        - cmp ebx,[rcx+000002A0]
- * 9  - TQ2-Win64-Shipping.exe+53BFC3F - 75 19                 - jne TQ2-Win64-Shipping.exe+53BFC5A
- * 10 - TQ2-Win64-Shipping.exe+53BFC41 - 48 8B C2              - mov rax,rdx
- * 11 - TQ2-Win64-Shipping.exe+53BFC44 - 48 C1 E8 20           - shr rax,20
- * 12 - TQ2-Win64-Shipping.exe+53BFC48 - 3B 81 A4020000        - cmp eax,[rcx+000002A4]
- * 13 - TQ2-Win64-Shipping.exe+53BFC4E - 75 0A                 - jne TQ2-Win64-Shipping.exe+53BFC5A
- * 14 - TQ2-Win64-Shipping.exe+53BFC50 - F3 0F10 81 AC020000   - movss xmm0,[rcx+000002AC]
- * 15 - TQ2-Win64-Shipping.exe+53BFC58 - EB 31                 - jmp TQ2-Win64-Shipping.exe+53BFC8B
- * 16 - TQ2-Win64-Shipping.exe+53BFC5A - 4C 8D 44 24 30        - lea r8,[rsp+30]
- * 17 - TQ2-Win64-Shipping.exe+53BFC5F - E8 3CD6FEFF           - call TQ2-Win64-Shipping.exe+53AD2A0
- * 18 - TQ2-Win64-Shipping.exe+53BFC64 - 80 7C 24 30 00        - cmp byte ptr [rsp+30],00
- * 19 - TQ2-Win64-Shipping.exe+53BFC69 - 75 20                 - jne TQ2-Win64-Shipping.exe+53BFC8B
- * 20 - TQ2-Win64-Shipping.exe+53BFC6B - 48 8D 87 A0020000     - lea rax,[rdi+000002A0]
- * 21 - TQ2-Win64-Shipping.exe+53BFC72 - F3 0F11 87 AC020000   - movss [rdi+000002AC],xmm0
- * 22 - TQ2-Win64-Shipping.exe+53BFC7A - 48 8D 4C 24 38        - lea rcx,[rsp+38]
- * 23 - TQ2-Win64-Shipping.exe+53BFC7F - 48 3B C8              - cmp rcx,rax
- * 24 - TQ2-Win64-Shipping.exe+53BFC82 - 74 07                 - je TQ2-Win64-Shipping.exe+53BFC8B
- * 25 - TQ2-Win64-Shipping.exe+53BFC84 - 48 89 18              - mov [rax],rbx
- * 26 - TQ2-Win64-Shipping.exe+53BFC87 - C6 40 08 01           - mov byte ptr [rax+08],01
- * 27 - TQ2-Win64-Shipping.exe+53BFC8B - F3 0F59 87 C0010000   - mulss xmm0,[rdi+000001C0]
- * 28 - TQ2-Win64-Shipping.exe+53BFC93 - 48 8B 5C 24 40        - mov rbx,[rsp+40]
- * 29 - TQ2-Win64-Shipping.exe+53BFC98 - F3 0F5F 05 9C7DCD00   - maxss xmm0,[TQ2-Win64-Shipping.D3D12SDKVersion+4E18]
- * 30 - TQ2-Win64-Shipping.exe+53BFCA0 - 48 83 C4 20           - add rsp,20
- * 31 - TQ2-Win64-Shipping.exe+53BFCA4 - 5F                    - pop rdi
- * 32 - TQ2-Win64-Shipping.exe+53BFCA5 - C3                    - ret
- *
- * I will ignore most of the code to focus on the bits that make this feature work. Line 14 is the important line
- * where the magic 1.0f is read that is the global scaler for the HUD. In terms of percetages think of 1.0f as
- * 100% so HUD is the default size as the developers intended it to be. That register will always contain that
- * value in this block and will be returned when the function returns. Aother point of interest is line 27, where
- * the 1.0f is multiplied by another scaler, that location also has 1.0f, so nothing is scaled, and on line 29 the
- * game performs a quick check against 0.01f (value at TQ2-Win64-Shipping.D3D12SDKVersion+4E18). And the game takes
- * the greater value of the two. Its a strange check to make, since if the value is so small that it makes the HUD
- * invisible, and just making NOP'ing this instruction and forcing a 0 into xmm0 has no bad consequences, so its
- * wierd why this check is here.
- *
- * But anyway back to the main point, after that multiply operation, we can inject a new value into the xmm0
- * register, and with experimentation I found that injecting 1.125f (112.5% if you wanna think in percentages). So
- * that will make the HUD 12.5% bigger, I hoped I could push it further, but that value is just enough where certain
- * UI elements don't go offscreen. This scales everything HUD wise, and in reverse if you go smaller than everything
- * becomes smaller, that option is there too.
- *
- * And just for fun, when you return from this function, the game also applies a division operation to the value in
- * xmm0. Xmm0 is divided once again by 1.0f, so nothing changes. Yet another scaler operation is applied that doesn't
- * do anything.
- *
- * @note As of v1.2.1 it has been discovered that the HUD scaler is not a constant 1.0f value, but rather it's a ratio
- * between the current game selected resolution and the physical desktop resolution. For example if the desktop is
- * 3840x2160 and the ingame resolution is 1920x1080, the HUD scaler will be 0.5f (1080/2160). In v1.2.1 we take that
- * into consideration and instead multiply what is already in the xmm0 regiter by 12.5% rather than hardcode 1.125f
- * like it was done previously.
- *
- * @return void
- */
-void hudFeature() {
-    Utils::SignatureHook hook = {
-        .signature = "48 8B 5C 24 40    F3 0F 5F 05 ?? ?? ?? ??",
-    };
-
-    bool enable = yml.masterEnable && yml.features.hud.enable;
-    Utils::injectHook(enable, module, hook,
-        [](SafetyHookContext& ctx) {
-            ctx.xmm0.f32[0] += (ctx.xmm0.f32[0] * 0.125f);
         }
     );
 }
@@ -449,11 +396,11 @@ void hudFeature() {
  * @return Always returns TRUE to indicate successful execution.
  */
 DWORD WINAPI Main(void* lpParameter) {
-    logInit();
+    logOpen();
     readYml();
-    pillarBoxFix();
-    fovFeature();
-    hudFeature();
+    fixPillarBox();
+    featureFov();
+    logClose();
     return true;
 }
 

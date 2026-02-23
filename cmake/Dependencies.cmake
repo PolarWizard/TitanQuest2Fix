@@ -13,14 +13,14 @@ FetchContent_Declare(
 FetchContent_Declare(
     spdlog
     GIT_REPOSITORY https://github.com/gabime/spdlog.git
-    GIT_TAG        v1.15.3
+    GIT_TAG        v1.17.0
     EXCLUDE_FROM_ALL
 )
 # YAML-CPP
 FetchContent_Declare(
     yamlcpp
     GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
-    GIT_TAG        0.8.0
+    GIT_TAG        yaml-cpp-0.9.0
     EXCLUDE_FROM_ALL
 )
 
